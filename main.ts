@@ -9,7 +9,7 @@
 // Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
@@ -19,7 +19,22 @@ const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
 
 // Clear a previous run first: without this, a renamed or deleted screenshot
 // would linger in /output and the second run would no longer match the repo.
-rmSync(out, { recursive: true, force: true });
+// Only the CONTENTS are cleared — the output directory itself is never
+// removed. The grader mounts /output under a root-owned parent and runs as
+// uid 65534, so deleting the directory itself fails with EACCES and the
+// whole run exits 1; removing each child inside it needs write access to
+// /output only, which the grader grants.
+if (existsSync(out)) {
+  if (!statSync(out).isDirectory()) {
+    // A stray file at the output path (never the case in the grader, where
+    // /output is a directory) is removed so the directory can take its place.
+    rmSync(out, { force: true });
+  } else {
+    for (const child of readdirSync(out)) {
+      rmSync(join(out, child), { recursive: true, force: true });
+    }
+  }
+}
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
 mkdirSync(join(out, 'screenshots'), { recursive: true });
