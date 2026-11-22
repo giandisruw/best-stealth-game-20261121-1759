@@ -112,17 +112,18 @@ export function buildShotState(shot, seed) {
   }
   if (shot === 'play2') {
     // The near-miss moment: the courier slips out of a cone at high
-    // suspicion while a guard turns to investigate the last seen spot.
+    // suspicion while a guard turns to investigate a thrown pebble.
     const game = freshState(0, seed);
     autopilot(game, { x: 620, y: 300 }, 9);
     const guard = game.guards[0];
     game.player.x = guard.x + 150;
-    game.player.y = guard.y + 60;
+    game.player.y = guard.y + 90;
     guard.angle = Math.atan2(game.player.y - guard.y, game.player.x - guard.x);
     guard.suspicion = 82;
     guard.state = 'suspicious';
     guard.lastSeen = { x: game.player.x, y: game.player.y };
-    guard.investigate = { x: game.player.x, y: game.player.y };
+    guard.investigate = { x: game.player.x + 60, y: game.player.y + 40 };
+    game.pebbles = [{ x: game.player.x + 60, y: game.player.y + 40 }];
     game.maxSuspicion = 82;
     game.alert = { label: 'SUSPICIOUS', colour: '#f5c542' };
     game.nearMissUntil = 8;
@@ -136,12 +137,28 @@ export function buildShotState(shot, seed) {
     game.screen = SCREEN_WIN;
     game.totalTime = 214.6;
     game.totalLetters = 11;
+    // Same bright exit-glow phase as the cover frame.
+    game.time = 3;
     return game;
   }
-  // Default 'play': mid-game, sneaking toward the first letter with the
-  // patrol cones, bushes and the golden exit all in view.
+  // Default 'play': the tense cover frame — the courier crouched at the
+  // bush edge with a letter just ahead, a guard's cone sweeping close
+  // enough to turn the alert meter yellow, and the golden exit in view.
   const game = freshState(0, seed);
-  autopilot(game, { x: 620, y: 300 }, 7);
+  autopilot(game, { x: 620, y: 300 }, 9);
+  game.player.x = 600;
+  game.player.y = 240;
+  game.player.sneaking = true;
+  const guard = game.guards[0];
+  guard.angle = Math.atan2(game.player.y - guard.y, game.player.x - guard.x);
+  guard.suspicion = 45;
+  guard.state = 'suspicious';
+  guard.lastSeen = { x: game.player.x, y: game.player.y };
+  game.maxSuspicion = 45;
+  game.alert = { label: 'SUSPICIOUS', colour: '#f5c542' };
   game.screen = SCREEN_PLAY;
+  // Freeze the exit glow at its brightest pulse phase, so the golden
+  // door reads as the goal even under the HUD bar.
+  game.time = 3;
   return game;
 }

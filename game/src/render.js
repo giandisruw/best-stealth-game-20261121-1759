@@ -3,6 +3,7 @@
 // Everything is drawn with canvas shapes — no images, no fonts from the web.
 import { COLOURS, FIELD, GUARD } from './config.js';
 import { coneColour } from './guards.js';
+import { drawPatrolRoute } from './patrols.js';
 
 export const SCREEN_TITLE = 'title';
 export const SCREEN_PLAY = 'play';
@@ -48,8 +49,9 @@ function drawFloor(ctx, level) {
     ctx.lineTo(FIELD.width, y);
     ctx.stroke();
   }
-  // Warm pools of lamplight on the floor.
-  ctx.fillStyle = 'rgba(255, 214, 120, 0.05)';
+  // Warm pools of lamplight on the floor: lit ground is safe to read,
+  // and the pools mark where a guard can see you best.
+  ctx.fillStyle = 'rgba(255, 214, 120, 0.10)';
   for (const lamp of level.lamps ?? []) {
     ctx.beginPath();
     ctx.arc(lamp.x, lamp.y, 110, 0, Math.PI * 2);
@@ -83,19 +85,43 @@ function drawBush(ctx, bush) {
 function drawVisionCone(ctx, guard) {
   const half = GUARD.viewHalfAngle;
   const range = GUARD.viewRange;
-  ctx.fillStyle = coneColour(guard.state);
+  // A cone bright at the guard and fading toward its edge, so its reach
+  // reads at a glance and a near miss looks like one.
+  const gradient = ctx.createRadialGradient(guard.x, guard.y, 10, guard.x, guard.y, range);
+  gradient.addColorStop(0, coneColour(guard.state));
+  gradient.addColorStop(1, coneColour(guard.state).replace(/0\.\d+\)/, '0.04)'));
+  ctx.fillStyle = gradient;
   ctx.beginPath();
   ctx.moveTo(guard.x, guard.y);
   ctx.arc(guard.x, guard.y, range, guard.angle - half, guard.angle + half);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = coneColour(guard.state).replace(/0\.\d+\)/, '0.7)');
-  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = coneColour(guard.state).replace(/0\.\d+\)/, '0.85)');
+  ctx.lineWidth = 2;
   ctx.stroke();
 }
 
+function drawFootstepTrail(ctx, guard) {
+  const trail = guard.trail ?? [];
+  for (let i = 0; i < trail.length; i += 1) {
+    const dot = trail[i];
+    const age = i / Math.max(1, trail.length);
+    ctx.fillStyle = `rgba(232, 236, 244, ${0.06 + age * 0.22})`;
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, 2.5 + age * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawGuard(ctx, guard) {
+  drawFootstepTrail(ctx, guard);
   drawVisionCone(ctx, guard);
+  // A pale ring so the guard reads against any floor, red while chasing.
+  ctx.strokeStyle = guard.state === 'chase' ? '#ff6b6b' : 'rgba(232, 236, 244, 0.85)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(guard.x, guard.y, GUARD.radius + 3, 0, Math.PI * 2);
+  ctx.stroke();
   ctx.fillStyle = guard.state === 'chase' ? '#ff6b6b' : COLOURS.guard;
   ctx.beginPath();
   ctx.arc(guard.x, guard.y, GUARD.radius, 0, Math.PI * 2);
@@ -110,6 +136,21 @@ function drawGuard(ctx, guard) {
   ctx.moveTo(guard.x, guard.y);
   ctx.lineTo(guard.x + Math.cos(guard.angle) * (GUARD.radius + 6), guard.y + Math.sin(guard.angle) * (GUARD.radius + 6));
   ctx.stroke();
+  // A lookout wears a taller cap, so its kind reads at a glance.
+  if (guard.kind === 'lookout') {
+    ctx.fillStyle = '#ffd76a';
+    ctx.beginPath();
+    ctx.arc(guard.x, guard.y - 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // An exclamation over the head the moment the guard turns on you.
+  if (guard.state === 'suspicious' || guard.state === 'chase') {
+    ctx.fillStyle = guard.state === 'chase' ? '#ff4d4d' : '#f5c542';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('!', guard.x, guard.y - GUARD.radius - 12);
+    ctx.textAlign = 'left';
+  }
   // Suspicion arc above the guard's head.
   if (guard.suspicion > 2) {
     ctx.strokeStyle = guard.suspicion >= 100 ? '#ff4d4d' : guard.suspicion >= 40 ? '#f5c542' : '#58d68d';
@@ -130,12 +171,20 @@ function drawPlayer(ctx, player, time) {
     ctx.stroke();
   }
   const bob = Math.sin(time * 8) * 1.5;
+  // A soft halo so the courier reads at a glance, even on a dark floor.
+  const halo = ctx.createRadialGradient(player.x, player.y, 4, player.x, player.y, 30);
+  halo.addColorStop(0, 'rgba(180, 120, 220, 0.35)');
+  halo.addColorStop(1, 'rgba(180, 120, 220, 0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, 30, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = COLOURS.playerCloak;
   ctx.beginPath();
   ctx.arc(player.x, player.y + bob, PLAYER_RADIUS, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = COLOURS.player;
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2.5;
   ctx.stroke();
   // Hooded head and a small satchel.
   ctx.fillStyle = COLOURS.player;
@@ -156,11 +205,18 @@ function drawPlayer(ctx, player, time) {
 
 function drawLetter(ctx, letter, time) {
   const lift = Math.sin(time * 3 + letter.x) * 3;
-  ctx.fillStyle = COLOURS.letter;
+  // A warm glow so the objective reads from across the room.
   ctx.save();
+  ctx.shadowColor = 'rgba(255, 215, 106, 0.9)';
+  ctx.shadowBlur = 14;
+  ctx.fillStyle = COLOURS.letter;
   ctx.translate(letter.x, letter.y + lift);
   ctx.rotate(-0.2);
   ctx.fillRect(-9, -6, 18, 12);
+  ctx.restore();
+  ctx.save();
+  ctx.translate(letter.x, letter.y + lift);
+  ctx.rotate(-0.2);
   ctx.strokeStyle = '#8a6d3b';
   ctx.lineWidth = 1.5;
   ctx.strokeRect(-9, -6, 18, 12);
@@ -174,6 +230,12 @@ function drawLetter(ctx, letter, time) {
 
 function drawExit(ctx, exit, time) {
   const glow = 0.55 + Math.sin(time * 2.5) * 0.2;
+  // A shaft of light above the door, so the goal reads from anywhere.
+  const beam = ctx.createLinearGradient(0, exit.y - 100, 0, exit.y);
+  beam.addColorStop(0, 'rgba(255, 215, 106, 0)');
+  beam.addColorStop(1, 'rgba(255, 215, 106, 0.22)');
+  ctx.fillStyle = beam;
+  ctx.fillRect(exit.x, exit.y - 100, exit.w, 100);
   ctx.fillStyle = `rgba(255, 215, 106, ${glow})`;
   ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
   ctx.strokeStyle = '#8a6d3b';
@@ -200,6 +262,7 @@ function drawPebbles(ctx, pebbles) {
 export function drawWorld(ctx, game) {
   const { level, player, guards, pebbles, time } = game;
   drawFloor(ctx, level);
+  for (const guard of guards) drawPatrolRoute(ctx, guard);
   for (const shadow of level.shadows) {
     drawRect(ctx, shadow, COLOURS.shadow, null);
   }
@@ -247,10 +310,17 @@ export function drawHud(ctx, game) {
   ctx.textAlign = 'left';
 
   if (game.nearMissUntil > time) {
-    ctx.fillStyle = '#ffd76a';
+    // A dark pill behind the shout, so it reads over a guard or a cone.
+    const text = 'CLOSE ONE! — they almost saw you';
     ctx.font = 'bold 26px sans-serif';
+    const width = ctx.measureText(text).width;
+    ctx.fillStyle = 'rgba(8, 12, 28, 0.8)';
+    ctx.beginPath();
+    ctx.roundRect(FIELD.width / 2 - width / 2 - 16, 58, width + 32, 40, 20);
+    ctx.fill();
+    ctx.fillStyle = '#ffd76a';
     ctx.textAlign = 'center';
-    ctx.fillText('CLOSE ONE! — they almost saw you', FIELD.width / 2, 84);
+    ctx.fillText(text, FIELD.width / 2, 86);
     ctx.textAlign = 'left';
   }
   if (player.hidden) {

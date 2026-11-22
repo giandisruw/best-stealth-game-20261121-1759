@@ -52,6 +52,17 @@ export const LEVELS = [
         speed: 82,
         pauseSeconds: 0.8,
       },
+      {
+        // A lookout on the exit approach: it never walks, it sweeps its
+        // cone across the top corridor, so the door is watched, not free.
+        kind: 'lookout',
+        waypoints: [{ x: 1050, y: 120 }],
+        sweepCenter: Math.PI / 2,
+        sweepRange: 1.0,
+        sweepSeconds: 5,
+        speed: 80,
+        pauseSeconds: 0,
+      },
     ],
   },
   {
@@ -113,6 +124,17 @@ export const LEVELS = [
         ],
         speed: 78,
         pauseSeconds: 1.4,
+      },
+      {
+        // A lookout over the hall's centre: its sweeping cone watches the
+        // middle letter, so that pickup has to be timed, not just walked to.
+        kind: 'lookout',
+        waypoints: [{ x: 620, y: 300 }],
+        sweepCenter: Math.PI / 2,
+        sweepRange: 1.2,
+        sweepSeconds: 4,
+        speed: 85,
+        pauseSeconds: 0,
       },
     ],
   },

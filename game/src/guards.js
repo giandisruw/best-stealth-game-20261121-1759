@@ -7,6 +7,7 @@ import { pointInRects } from './level.js';
 export function createGuard(def) {
   const first = def.waypoints[0];
   const second = def.waypoints[1] ?? first;
+  const kind = def.kind ?? 'patroller';
   return {
     x: first.x,
     y: first.y,
@@ -16,6 +17,17 @@ export function createGuard(def) {
     speed: def.speed,
     pauseSeconds: def.pauseSeconds ?? 1,
     pauseLeft: 0,
+    /** patroller walks a route; lookout stands at a post and sweeps its cone. */
+    kind,
+    /** The post a lookout returns to, and the sweep it makes while on it. */
+    post: { x: first.x, y: first.y },
+    sweepCenter: def.sweepCenter ?? Math.atan2(second.y - first.y, second.x - first.x),
+    sweepRange: def.sweepRange ?? 1.1,
+    sweepSeconds: def.sweepSeconds ?? 5,
+    sweepPhase: 0,
+    /** Fading footstep dots, newest last: {x, y} pairs left while walking. */
+    trail: [],
+    trailTimer: 0,
     /** calm | suspicious | alerted | chase */
     state: 'calm',
     suspicion: 0,
@@ -24,6 +36,17 @@ export function createGuard(def) {
     lookTimer: 0,
     scanAngle: 0,
   };
+}
+
+/** Leave a footstep dot behind a guard that is walking, fading the old ones. */
+export function recordFootstep(guard, dt) {
+  guard.trailTimer += dt;
+  if (guard.trailTimer < 0.12) return;
+  guard.trailTimer = 0;
+  const last = guard.trail[guard.trail.length - 1];
+  if (last && Math.hypot(guard.x - last.x, guard.y - last.y) < 8) return;
+  guard.trail.push({ x: guard.x, y: guard.y });
+  while (guard.trail.length > 14) guard.trail.shift();
 }
 
 /** Move a point toward a target by at most `distance`; returns true on arrival. */
@@ -160,12 +183,26 @@ export function updateGuard(guard, player, level, dt) {
     }
   } else {
     // Patrol: walk the waypoints, pausing at each one to look around.
-    if (guard.pauseLeft > 0) {
+    // A lookout instead holds its post: it walks back when it has strayed,
+    // then sweeps its cone back and forth across its beat.
+    if (guard.kind === 'lookout') {
+      const home = Math.hypot(guard.post.x - guard.x, guard.post.y - guard.y);
+      if (home > 12) {
+        moveToward(guard, guard.post, guard.speed * dt);
+        recordFootstep(guard, dt);
+      } else {
+        guard.sweepPhase += dt;
+        guard.angle =
+          guard.sweepCenter +
+          Math.sin((guard.sweepPhase / guard.sweepSeconds) * Math.PI * 2) * guard.sweepRange;
+      }
+    } else if (guard.pauseLeft > 0) {
       guard.pauseLeft -= dt;
       guard.angle += Math.sin(guard.pauseLeft * 3) * 0.5 * dt;
     } else {
       const target = guard.waypoints[guard.waypointIndex];
       const arrived = moveToward(guard, target, guard.speed * dt);
+      recordFootstep(guard, dt);
       if (arrived) {
         guard.waypointIndex = (guard.waypointIndex + 1) % guard.waypoints.length;
         guard.pauseLeft = guard.pauseSeconds;
@@ -181,10 +218,10 @@ export function updateGuard(guard, player, level, dt) {
 
 /** The cone colour for a guard's current alert state. */
 export function coneColour(state) {
-  if (state === 'chase') return 'rgba(255, 77, 77, 0.38)';
-  if (state === 'alerted') return 'rgba(255, 140, 66, 0.32)';
-  if (state === 'suspicious') return 'rgba(245, 197, 66, 0.28)';
-  return 'rgba(88, 214, 141, 0.20)';
+  if (state === 'chase') return 'rgba(255, 77, 77, 0.46)';
+  if (state === 'alerted') return 'rgba(255, 140, 66, 0.40)';
+  if (state === 'suspicious') return 'rgba(245, 197, 66, 0.36)';
+  return 'rgba(88, 214, 141, 0.30)';
 }
 
 /** Send every guard to investigate a noise at (x, y). */
